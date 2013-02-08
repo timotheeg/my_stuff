@@ -1,0 +1,152 @@
+#!/usr/bin/php
+<?php
+
+exec('which exiftool 2>/dev/null', $data, $code);
+if (0 !== $code)
+{
+	printf("ERROR: exiftool cannot be found\n");
+	exit(1);
+}
+
+$targetDir = '/mnt/storage/photos/';
+$verbose = false;
+$startFiles = 1;
+
+// check options
+while (substr($argv[$startFiles], 0, 1) == '-')
+{
+	switch ($argv[$startFiles])
+	{
+		case '-t':
+			$startFiles++;
+			if (!isset($argv[$startFiles]))
+			{
+				die ("no target dir passed to target option");
+			}
+			else if (!is_dir($argv[$startFiles]))
+			{
+				die ("ERROR: [{$argv[$startFiles]}] is not a directory");
+			}
+			else if (!is_writable($argv[$startFiles]))
+			{
+				die ("ERROR: [{$argv[$startFiles]}] is not writable");
+			}
+			else
+			{
+				$targetDir = $argv[$startFiles];
+				
+				if (substr($targetDir, -1, 1) != '/')
+				{
+					$targetDir .= '/';
+				}
+				$startFiles++;
+			}
+			break;
+		
+		case '-v':
+			$startFiles++;
+			$verbose = true;
+			break;
+		
+		default:
+			break 2;
+	}
+}
+
+// process files
+$dateRxPattern = '/^(\d{4}):(\d{2}):(\d{2}) (\d{2}:\d{2}:\d{2})$/';
+
+for ($i=$startFiles; $i<$argc; $i++)
+{
+	if (!file_exists($argv[$i]))
+	{
+		printf("warning: {$argv[$i]} not found. skipping.\n");
+		continue;
+	}
+	
+	if (is_dir($argv[$i]))
+	{
+		printf("warning: {$argv[$i]} is a directory. skipping.\n");
+		continue;
+	}
+	
+   $date = '';
+	$filename = escapeshellcmd($argv[$i]);
+	$data = array();
+	$entry = exec("exiftool -T -createdate \"$filename\" 2>/dev/null", $data, $code);
+	if (0 === $code && preg_match($dateRxPattern, $entry, $matches))
+   {
+      $year = $matches[1];
+      $date = "{$matches[2]}_{$matches[3]}";
+	}
+	else
+	{
+		// use file timestamp
+		if ($verbose) printf("WARNING: using file timestamp for file [{$argv[$i]}]\n");
+		$fileTime = filemtime ( $argv[$i] );
+		$year = @date('Y', $fileTime);
+		$date = @date('m_d', $fileTime);
+	}
+	
+	// now move file
+	$targetDateDir = $targetDir . $year.'/'.$date;
+	
+	if (!is_dir($targetDateDir))
+	{
+		if (!mkdir($targetDateDir, 0775, true))
+		{
+			printf("WARNING: unable to create [$targetDateDir]\n");
+			continue;
+		}
+	}
+	else if (!is_writable($targetDateDir))
+	{
+		printf("WARNING: [$targetDateDir] is not writable\n");
+		continue;
+	}
+	
+	$targetFile = $targetDateDir.'/'.strtolower( basename($argv[$i]) );
+	
+	if (file_exists($targetFile))
+	{
+		printf("WARNING: target [$targetFile] already exists, skipping.\n");
+		continue;
+	}
+	
+	if ($verbose) echo "{$argv[$i]} -> $targetFile\n";
+	if (!rename($argv[$i], $targetFile))
+	{
+		printf("WARNING: could not move file [{$argv[$i]}]\n");
+	}
+	else
+	{
+		// and change permission
+		chmod($targetFile, 0664);
+	}
+
+	// move along the raw therapee profile, if it exists
+	if (file_exists($argv[$i].'.pp2'))
+	{
+		if (!rename($argv[$i].'.pp2', $targetFile.'.pp2'))
+		{
+			printf("WARNING: could not move rawtherapee profile\n");
+		}
+		else
+		{
+			chmod($argv[$i].'.pp2', 0664);
+		}
+	}
+	// move along the raw therapee profile, if it exists
+	if (file_exists($argv[$i].'.pp3'))
+	{
+		if (!rename($argv[$i].'.pp3', $targetFile.'.pp3'))
+		{
+			printf("WARNING: could not move rawtherapee profile\n");
+		}
+		else
+		{
+			chmod($argv[$i].'.pp3', 0664);
+		}
+	}
+}
+?>
