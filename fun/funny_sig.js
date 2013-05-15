@@ -17,11 +17,11 @@ function format(template /*, args */) {
 	return template;
 }
 
-var tpl_sig_backward = "eval('n=?;s=\"\";do{s=String.fromCharCode((n&?)+?)+s}while(n>>>=?);')";
-var tpl_sig_forward = "eval('n=?;s=\"\";do{s+=String.fromCharCode((n&?)+?)}while(n>>>=?);')";
+var tpl_sig_backward = "n=?;s=\"\";do{s=String.fromCharCode((n&?)+?)+s}while(n>>>=?)";
+var tpl_sig_forward = "n=?;s=\"\";do{s+=String.fromCharCode((n&?)+?)}while(n>>>=?)";
 
 
-function _getSig(template, word, bits_per_char, base_ascii)
+function _getSig(sig_template, word, bits_per_char, base_ascii)
 {
 	var binary = '';
 	for (var idx=word.length; idx--;)
@@ -31,7 +31,7 @@ function _getSig(template, word, bits_per_char, base_ascii)
 
 	var num = parseInt(binary, 2);
 
-	return format(tpl_sig_backward
+	return format(sig_template
 			, num
 			, (1 << bits_per_char) - 1
 			, base_ascii
@@ -80,18 +80,20 @@ function funnysig(word)
 
 	// now check edge cases:
 	// we need to worry about cases where the index 0 is either first or last
-	if (word.charCodeAt(0) == min_ascii)
+	if (word.charCodeAt(word.length - 1) == min_ascii)
 	{
-		if (word.charCodeAt(word.length - 1) != min_ascii)
+		if (word.charCodeAt(0) != min_ascii)
 		{
-			return getSigForward(word, bits_per_char, min_ascii);
+			return getSigBackward(word, bits_per_char, min_ascii);
 		}
 		
 		// we have zeros on both end (e.g. "amelia")
 		// that means the base needs to be 1 rather than zero
 		min_ascii -= 1;
 
-		// check if that means we need an extra bit :(
+		// to accomodate the extra 1 offset
+		// we need to check if the current range can accomodate a +1
+		// or if we need an extra bit :(
 		if (isPowerOfTwo(required_range))
 		{
 			bits_per_char += 1;
@@ -105,7 +107,7 @@ function funnysig(word)
 		}
 	}
 
-	return getSigBackward(word, bits_per_char, min_ascii);
+	return getSigForward(word, bits_per_char, min_ascii);
 }
 
 if ( !process || !process.argv || !process.argv[2] )
@@ -115,5 +117,6 @@ if ( !process || !process.argv || !process.argv[2] )
 }
 else
 {
-	console.log( process.argv[2] + ": " + funnysig( process.argv[2] ) );
+	var sig = funnysig( process.argv[2] );
+	console.log( process.argv[2] + ": " + sig + 'console.log(s) -> '  + eval(sig));
 }
