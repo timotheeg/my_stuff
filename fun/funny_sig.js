@@ -1,4 +1,4 @@
-/*jshint laxbreak:true */
+/*jshint laxbreak:true, laxcomma:true, evil:true */
 
 // ================================
 // Utility functions
@@ -16,7 +16,7 @@ function isPowerOfTwo(x)
 
 function format(template /*, args */) {
 	for (i=1;i<arguments.length;i++) {
-		template = template.replace('?', arguments[i])
+		template = template.replace('?', arguments[i]);
 	}
 	return template;
 }
