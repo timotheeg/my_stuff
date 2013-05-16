@@ -1,4 +1,4 @@
-/*jshint laxbreak:true, laxcomma:true, evil:true */
+/*jshint laxbreak:true, laxcomma:true */
 
 // ================================
 // Utility functions
@@ -167,6 +167,11 @@ else
 		process.exit(1);
 	}
 
-	console.log( process.argv[2] + ": " + sig + ' -> '  + eval(sig));
+	// in debug, we want to verify output!
+	// console.log( process.argv[2] + ": " + sig + ' -> '  + eval(sig));
+
+	// in normal mode, just return the bare signature of course!
+	console.log(sig);
+	
 	process.exit(0);
 }
