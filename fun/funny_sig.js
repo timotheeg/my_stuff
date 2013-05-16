@@ -99,7 +99,7 @@ function funnysig(word)
 	// if both ends of the word are min_ascii (that means will get transposed to char 0 (==falsy)),
 	// then we NEED to decrease min_ascii by 1, so the chars will get transposed to 1 and be truthy
 	// e.g. "amelia"
-	if (first_ascii === min_ascii && last_ascii === last_ascii)
+	if (first_ascii === min_ascii && last_ascii === min_ascii)
 	{
 		min_ascii -= 1;
 	}
