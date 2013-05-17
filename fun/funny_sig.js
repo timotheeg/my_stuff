@@ -137,12 +137,12 @@ function funnysig(word)
 	}
 
 	// if we reach here, we can always fit the word, yeah!
-	if (first_ascii === min_ascii)
+	if (last_ascii === min_ascii)
 	{
-		return getSigReverseOrder(word, bits_per_char, min_ascii);
+		return getSigWordOrder(word, bits_per_char, min_ascii);
 	}
 
-	return getSigWordOrder(word, bits_per_char, min_ascii);
+	return getSigReverseOrder(word, bits_per_char, min_ascii);
 }
 
 
