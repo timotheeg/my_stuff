@@ -102,10 +102,9 @@ class KissAsianRipper {
 	async getAllEpisodes() {
 		console.log('getAllEpisodes()');
 
-		return Promise.map(
+		return Promise.mapSeries(
 			this.episode_urls,
-			url => this.getMediaFor(url),
-			{concurrency: 1}
+			url => this.getMediaFor(url)
 		);
 	}
 
