@@ -4,6 +4,7 @@ const Promise = require('bluebird');
 const request = require('request');
 const fs = require('fs');
 const path = require('path');
+const parseMs = require('parse-ms');
 
 const SAVE_DIR = '/Users/tgroleau/tmp/kissasian/';
 const CHECKPOINT = '.checkpoint';
@@ -86,14 +87,12 @@ class KissAsianRipper {
 	async getEpisodesList() {
 		console.log('getEpisodesList()');
 
+		let idx;
 		const res = await this.Runtime.evaluate({expression: `JSON.stringify([...document.querySelectorAll('#selectEpisode option')].map(el => el.value))`});
 
 		this.episode_urls = JSON.parse(res.result.value);
-
-		let idx = this.episode_urls.indexOf(this.first_episode);
-
+		idx = this.episode_urls.indexOf(this.first_episode);
 		if (idx > 0) this.episode_urls.splice(0, idx);
-
 		this.episode_urls = this.episode_urls.map(id => `${this.base_url}${id}`);
 
 		console.log(`Episodes urls (${this.episode_urls.length} entries):\n` + this.episode_urls.join('\n'));
@@ -117,7 +116,7 @@ class KissAsianRipper {
 			.then(() => this.loadPage(page_url))
 			.then(() => this.getEncryptedPlayerURL())
 			.then(url => this.getPlayerUrl(url))
-			.then(url => this.getMediaURl(url))
+			.then(url => this.getMediaUrl(url))
 			.then(url => { this.stopBrowser(); return url })
 			.then(url => this.fetchMedia(url, page_url)) // long task!
 	}
@@ -126,7 +125,7 @@ class KissAsianRipper {
 		console.log('getEncryptedPlayerURL()');
 
 		let
-			max_wait_for_full_page = 100,
+			max_wait_for_full_page = 200,
 			self = this;
 
 		return new Promise(function(resolve, reject) {
@@ -157,24 +156,28 @@ class KissAsianRipper {
 		return res.result.value;
 	}
 
-	async getMediaURl(player_url) {
-		console.log(`getMediaURl( ${player_url} )`);
+	async getMediaUrl(player_url) {
+		console.log(`getMediaUrl( ${player_url} )`);
 
 		return new Promise((resolve, reject) => {
 			request(player_url, (err, resp, body) => {
 				if (err) return reject(err);
 
-				let m = body.match(/"sources"\s*:\s*(\[\{.+?\}\])/);
-				if (!m) return reject(new Error('Unable to find sources', 3));
-				try {
-					let sources = JSON.parse(m[1]);
-					sources.forEach(el => el.res = parseInt(el.res));
-					sources.sort((a,b) => b.res - a.res);
-					resolve(sources[0].file); // return largest res available
-				}
-				catch(e) {
-					reject(e);
-				}
+				let m = body.match(/<a href="([^"]+q=(\d+p))">/g);
+				if (!m) return reject(new Error('Unable to find multiple player sizes', 3));
+
+				let large_media_player_url = m.pop().split('"')[1];
+
+				console.log(`getMediaUrl( ${large_media_player_url} )`);
+
+				request(large_media_player_url, (err, resp, body) => {
+					if (err) return reject(err);
+
+					let m = body.match(/source src="([^"]+)".+title="(\d+)p" data-res="(\d+)"/);
+					if (!m) return reject(new Error('Unable to find player Url', 4));
+
+					resolve(m[1]);
+				});
 			});
 		});
 	}
@@ -186,6 +189,7 @@ class KissAsianRipper {
 			let
 				extension = media_url.split('.').pop(),
 				episode_num = page_url.match(KAR_URL_RE)[4],
+				start_ms = Date.now(),
 				target_filename;
 
 			episode_num = episode_num.split('-').map(num => (num.length < 2 ? `0${num}` : num)).join('-');
@@ -201,7 +205,10 @@ class KissAsianRipper {
 					console.error(e);
 					reject(e);
 				})
-				.on('end', resolve)
+				.on('end', () => {
+					console.log(`Download complete: ${JSON.stringify(parseMs(Date.now() - start_ms))}`);
+					resolve();
+				})
 				.pipe(
 					fs.createWriteStream(target_filename)
 				)

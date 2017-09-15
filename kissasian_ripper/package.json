@@ -12,6 +12,7 @@
     "bluebird": "^3.5.0",
     "chrome-launcher": "^0.3.2",
     "chrome-remote-interface": "^0.24.2",
+    "parse-ms": "^1.0.1",
     "request": "^2.81.0"
   }
 }
