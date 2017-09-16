@@ -134,6 +134,7 @@ class KissAsianRipper {
 			async function waitForEncryptedPlayerURL() {
 				if (--max_wait_for_full_page < 0) {
 					reject(new Error('Cannot get Full Page', 1));
+					return;
 				}
 
 				try {
