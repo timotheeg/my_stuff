@@ -158,28 +158,46 @@ class KissAsianRipper {
 	}
 
 	async getMediaUrl(player_url) {
-		console.log(`getMediaUrl( ${player_url} )`);
-
 		return new Promise((resolve, reject) => {
-			request(player_url, (err, resp, body) => {
-				if (err) return reject(err);
+			let tries_left = 3, err_msg;
 
-				let m = body.match(/<a href="([^"]+q=(\d+p))">/g);
-				if (!m) return reject(new Error('Unable to find multiple player sizes', 3));
+			tryNow();
 
-				let large_media_player_url = m.pop().split('"')[1];
+			function tryNow(err) {
+				if (err) console.error(err.message);
 
-				console.log(`getMediaUrl( ${large_media_player_url} )`);
+				console.log(`getMediaUrl( ${player_url} )`);
 
-				request(large_media_player_url, (err, resp, body) => {
-					if (err) return reject(err);
+				if (tries_left-- <= 0) {
+					reject(err);
+					return;
+				}
 
-					let m = body.match(/source src="([^"]+)".+title="(\d+)p" data-res="(\d+)"/);
-					if (!m) return reject(new Error('Unable to find player Url', 4));
+				request(player_url, (err, resp, body) => {
+					if (err) tryNow(err);
 
-					resolve(m[1]);
+					console.log(`received response ${resp.statusCode}`);
+
+					let m = body.match(/<a href="([^"]+q=(\d+p))">/g);
+					if (!m) {
+						console.error(body);
+						return tryNow(new Error('Unable to find multiple player sizes', 3));
+					}
+
+					let large_media_player_url = m.pop().split('"')[1];
+
+					console.log(`getMediaUrl( ${large_media_player_url} )`);
+
+					request(large_media_player_url, (err, resp, body) => {
+						if (err) return tryNow(err);
+
+						let m = body.match(/source src="([^"]+)".+title="(\d+)p" data-res="(\d+)"/);
+						if (!m) return tryNow(new Error('Unable to find player Url', 4));
+
+						resolve(m[1]);
+					});
 				});
-			});
+			}
 		});
 	}
 
