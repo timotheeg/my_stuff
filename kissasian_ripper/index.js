@@ -222,7 +222,9 @@ class KissAsianRipper {
 	async fetchMedia(media_url, page_url) {
 		return new Promise((resolve, reject) => {
 			const self = this;
+			const MAX_TIME_NO_DATA = 5 * 60 * 1000;
 			let tries_left = TRIES_PER_STEP;
+			let write_stream, abort_timeout, req;
 
 			tryNow();
 
@@ -237,35 +239,50 @@ class KissAsianRipper {
 				console.log(`fetchMedia( ${media_url}, ${page_url} )`);
 
 				let
-					extension = media_url.split('.').pop(),
+					extension   = media_url.split('.').pop(),
 					episode_num = page_url.match(KAR_URL_RE)[4],
-					start_ms = Date.now(),
+					start_ms    = Date.now(),
 					target_filename;
 
-				episode_num = episode_num.split('-').map(num => (num.length < 2 ? `0${num}` : num)).join('-');
-
+				episode_num     = episode_num.split('-').map(num => (num.length < 2 ? `0${num}` : num)).join('-');
 				target_filename = `${SAVE_DIR}${self.show_name}/${self.show_name}_S01E${episode_num}.${extension}`;
+				write_stream    = fs.createWriteStream(target_filename);
 
 				console.log(`Fetching ${media_url} into ${target_filename}`);
 
-				request
-					.get({
-						uri: media_url,
-						timeout: 5 * 60 * 1000
-					})
-					.on('error', e => {
-						fs.unlinkSync(target_filename);
-						tryNow(e);
-					})
-					.on('end', e => {
-						if (e) return;
+				req = request
+					.get(media_url)
+					.on('error', onError)
+					.on('data', onData)
+					.on('end', onEnd)
+					.pipe(write_stream);
 
-						console.log(`Download complete: ${JSON.stringify(parseMs(Date.now() - start_ms))}`);
-						resolve();
-					})
-					.pipe(
-						fs.createWriteStream(target_filename)
-					)
+				// fake onData to start the data timeout timer
+				onData();
+			}
+
+			function onData() {
+				abort_timeout = clearTimeout(abort_timeout);
+				abort_timeout = setTimeout(abort, MAX_TIME_NO_DATA);
+			}
+
+			function onError(e) {
+				req.removeAllListeners();
+				write_stream.end();
+				fs.unlinkSync(target_filename);
+				tryNow(e);
+			}
+
+			function onEnd(e) {
+				if (e) return;
+				abort_timeout = clearTimeout(abort_timeout);
+				console.log(`Download complete: ${JSON.stringify(parseMs(Date.now() - start_ms))}`);
+				resolve();
+			}
+
+			function abort() {
+				req.abort();
+				onError(new Error('No Data Timeout'));
 			}
 		});
 	}
