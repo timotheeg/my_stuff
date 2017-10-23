@@ -10,6 +10,7 @@ const SAVE_DIR = '/Users/tgroleau/tmp/kissasian/';
 const CHECKPOINT = '.checkpoint';
 const SLEEP_TIME = 20 * 1000; // 20s in between each page navigation
 const KAR_URL_RE = /^(.+\/([^/]+)\/)(Episode-([0-9-]+)[^\/]+)$/;
+const TRIES_PER_STEP = 3;
 
 // Optional: set logging level of launcher to see its output.
 // Install it using: yarn add lighthouse-logger
@@ -116,6 +117,7 @@ class KissAsianRipper {
 			.then(() => this.loadPage(page_url))
 			.then(() => this.getEncryptedPlayerURL())
 			.then(url => this.getPlayerUrl(url))
+			.then(url => this.getLargeMediaPlayerURL(url))
 			.then(url => this.getMediaUrl(url))
 			.then(url => { this.stopBrowser(); return url })
 			.then(url => this.fetchMedia(url, page_url)) // long task!
@@ -157,80 +159,114 @@ class KissAsianRipper {
 		return res.result.value;
 	}
 
-	async getMediaUrl(player_url) {
+	async getLargeMediaPlayerURL(player_url) {
 		return new Promise((resolve, reject) => {
-			let tries_left = 3, err_msg;
+			let tries_left = TRIES_PER_STEP;
 
 			tryNow();
 
 			function tryNow(err) {
 				if (err) console.error(err.message);
 
-				console.log(`getMediaUrl( ${player_url} )`);
+				if (tries_left-- <= 0) {
+					reject(err);
+					return;
+				}
+
+				console.log(`getLargeMediaPlayerURL( ${player_url} )`);
+
+				request(player_url, (err, resp, body) => {
+					if (err) tryNow(err);
+
+					let m = body.match(/<a href="([^"]+q=(\d+p))">/g);
+					if (!m) {
+						return tryNow(new Error('Unable to find multiple player sizes', 3));
+					}
+
+					let large_media_player_url = m.pop().split('"')[1];
+
+					resolve(large_media_player_url);
+				});
+			}
+		});
+	}
+
+	async getMediaUrl(player_url) {
+		return new Promise((resolve, reject) => {
+			let tries_left = TRIES_PER_STEP;
+
+			tryNow();
+
+			function tryNow(err) {
+				if (err) console.error(err.message);
 
 				if (tries_left-- <= 0) {
 					reject(err);
 					return;
 				}
 
+				console.log(`getMediaUrl( ${player_url} )`);
+
 				request(player_url, (err, resp, body) => {
-					if (err) tryNow(err);
+					if (err) return tryNow(err);
 
-					console.log(`received response ${resp.statusCode}`);
+					let m = body.match(/source src="([^"]+)".+title="(\d+)p" data-res="(\d+)"/);
+					if (!m) return tryNow(new Error('Unable to find player Url', 4));
 
-					let m = body.match(/<a href="([^"]+q=(\d+p))">/g);
-					if (!m) {
-						console.error(body);
-						return tryNow(new Error('Unable to find multiple player sizes', 3));
-					}
-
-					let large_media_player_url = m.pop().split('"')[1];
-
-					console.log(`getMediaUrl( ${large_media_player_url} )`);
-
-					request(large_media_player_url, (err, resp, body) => {
-						if (err) return tryNow(err);
-
-						let m = body.match(/source src="([^"]+)".+title="(\d+)p" data-res="(\d+)"/);
-						if (!m) return tryNow(new Error('Unable to find player Url', 4));
-
-						resolve(m[1]);
-					});
+					resolve(m[1]);
 				});
 			}
 		});
 	}
 
 	async fetchMedia(media_url, page_url) {
-		console.log(`fetchMedia( ${media_url}, ${page_url} )`);
-
 		return new Promise((resolve, reject) => {
-			let
-				extension = media_url.split('.').pop(),
-				episode_num = page_url.match(KAR_URL_RE)[4],
-				start_ms = Date.now(),
-				target_filename;
+			const self = this;
+			let tries_left = TRIES_PER_STEP;
 
-			episode_num = episode_num.split('-').map(num => (num.length < 2 ? `0${num}` : num)).join('-');
+			tryNow();
 
-			target_filename = `${SAVE_DIR}${this.show_name}/${this.show_name}_S01E${episode_num}.${extension}`;
+			function tryNow(err) {
+				if (err) console.error(err.message);
 
-			console.log(`Fetching ${media_url} into ${target_filename}`);
+				if (tries_left-- <= 0) {
+					reject(err);
+					return;
+				}
 
-			request
-				.get(media_url)
-				.on('error', e => {
-					fs.unlinkSync(target_filename);
-					console.error(e);
-					reject(e);
-				})
-				.on('end', () => {
-					console.log(`Download complete: ${JSON.stringify(parseMs(Date.now() - start_ms))}`);
-					resolve();
-				})
-				.pipe(
-					fs.createWriteStream(target_filename)
-				)
+				console.log(`fetchMedia( ${media_url}, ${page_url} )`);
+
+				let
+					extension = media_url.split('.').pop(),
+					episode_num = page_url.match(KAR_URL_RE)[4],
+					start_ms = Date.now(),
+					target_filename;
+
+				episode_num = episode_num.split('-').map(num => (num.length < 2 ? `0${num}` : num)).join('-');
+
+				target_filename = `${SAVE_DIR}${self.show_name}/${self.show_name}_S01E${episode_num}.${extension}`;
+
+				console.log(`Fetching ${media_url} into ${target_filename}`);
+
+				request
+					.get({
+						uri: media_url,
+						timeout: 5 * 60 * 1000
+					})
+					.on('error', e => {
+						fs.unlinkSync(target_filename);
+						tryNow(e);
+					})
+					.on('end', e => {
+						if (e) return;
+
+						console.log(`Download complete: ${JSON.stringify(parseMs(Date.now() - start_ms))}`);
+						resolve();
+					})
+					.pipe(
+						fs.createWriteStream(target_filename)
+					)
+			}
 		});
 	}
 }
