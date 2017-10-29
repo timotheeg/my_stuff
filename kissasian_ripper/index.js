@@ -41,7 +41,7 @@ class KissAsianRipper {
 
 		this.startBrowser()
 			.then(() => this.loadPage(this.start_url))
-			.then(() => this.getEncryptedPlayerURL()) // acts as the 5 second waiter
+			.then(() => this.waitForEpisodeList()) // acts as the 5 second waiter
 			.then(() => this.getEpisodesList())
 			.then(() => Promise.delay(SLEEP_TIME))
 			.then(() => this.stopBrowser())
@@ -97,6 +97,37 @@ class KissAsianRipper {
 		this.episode_urls = this.episode_urls.map(id => `${this.base_url}${id}`);
 
 		console.log(`Episodes urls (${this.episode_urls.length} entries):\n` + this.episode_urls.join('\n'));
+
+		return this.episode_urls;
+	}
+
+	async waitForEpisodeList() {
+		console.log('waitForEpisodeList()');
+
+		let
+			max_wait_for_episode_list = 200,
+			self = this;
+
+		return new Promise(function(resolve, reject) {
+			_waitForEpisodeList();
+
+			async function _waitForEpisodeList(e) {
+				if (--max_wait_for_episode_list < 0) {
+					reject(e);
+					return;
+				}
+
+				try {
+					const res = await self.Runtime.evaluate({expression: `document.querySelectorAll('#selectEpisode option').length`});
+					if (res.result.value <= 0) throw new Error('Episode List Not Ready');
+					resolve();
+				}
+				catch(e)
+				{
+					setTimeout(_waitForEpisodeList, 100, e);
+				}
+			}
+		});
 	}
 
 	async getAllEpisodes() {
@@ -115,108 +146,35 @@ class KissAsianRipper {
 
 		return this.startBrowser()
 			.then(() => this.loadPage(page_url))
-			.then(() => this.getEncryptedPlayerURL())
-			.then(url => this.getPlayerUrl(url))
-			.then(url => this.getLargeMediaPlayerURL(url))
+			.then(() => this.waitForEpisodeList())
 			.then(url => this.getMediaUrl(url))
 			.then(url => { this.stopBrowser(); return url })
 			.then(url => this.fetchMedia(url, page_url)) // long task!
 	}
 
-	async getEncryptedPlayerURL() {
-		console.log('getEncryptedPlayerURL()');
-
-		let
-			max_wait_for_full_page = 200,
-			self = this;
-
-		return new Promise(function(resolve, reject) {
-			waitForEncryptedPlayerURL();
-
-			async function waitForEncryptedPlayerURL() {
-				if (--max_wait_for_full_page < 0) {
-					reject(new Error('Cannot get Full Page', 1));
-					return;
-				}
-
-				try {
-					const res = await self.Runtime.evaluate({expression: "document.querySelector('#centerDivVideo script').textContent"});
-					const m = res.result.value.match(/kissenc\.decrypt\(['"]([^)]+)['"]\)/i);
-					if (!m || !m[1]) throw new Error('Cannot find encrypted source', 2);
-					resolve(m[1]);
-				}
-				catch(e)
-				{
-					setTimeout(waitForEncryptedPlayerURL, 100);
-				}
-			}
-		});
-	}
-
-	async getPlayerUrl(encrypted_player_url) {
-		console.log(`getPlayerUrl( ${encrypted_player_url} )`);
-		const res = await this.Runtime.evaluate({expression: `$kissenc.decrypt('${encrypted_player_url}')`});
-		return res.result.value;
-	}
-
-	async getLargeMediaPlayerURL(player_url) {
-		return new Promise((resolve, reject) => {
-			let tries_left = TRIES_PER_STEP;
-
-			tryNow();
-
-			function tryNow(err) {
-				if (err) console.error(err.message);
-
-				if (tries_left-- <= 0) {
-					reject(err);
-					return;
-				}
-
-				console.log(`getLargeMediaPlayerURL( ${player_url} )`);
-
-				request(player_url, (err, resp, body) => {
-					if (err) tryNow(err);
-
-					let m = body.match(/<a href="([^"]+q=(\d+p))">/g);
-					if (!m) {
-						return tryNow(new Error('Unable to find multiple player sizes', 3));
-					}
-
-					let large_media_player_url = m.pop().split('"')[1];
-
-					resolve(large_media_player_url);
-				});
-			}
-		});
-	}
-
 	async getMediaUrl(player_url) {
-		return new Promise((resolve, reject) => {
-			let tries_left = TRIES_PER_STEP;
+		console.log(`getMediaUrl()`);
 
-			tryNow();
+		let res, encrypted, selection;
+		res = await this.Runtime.evaluate({expression: `JSON.stringify([...document.querySelectorAll('#selectQuality option')].map(el => {return {text: el.textContent, value: el.value}}))`});
 
-			function tryNow(err) {
-				if (err) console.error(err.message);
+		let data = JSON.parse(res.result.value);
 
-				if (tries_left-- <= 0) {
-					reject(err);
-					return;
-				}
-
-				console.log(`getMediaUrl( ${player_url} )`);
-
-				request(player_url, (err, resp, body) => {
-					if (err) return tryNow(err);
-
-					let m = body.match(/source src="([^"]+)".+title="(\d+)p" data-res="(\d+)"/);
-					if (!m) return tryNow(new Error('Unable to find player Url', 4));
-
-					resolve(m[1]);
-				});
-			}
+		data.forEach(el => {
+			let m = el.text.match(/^(\d+)p$/);
+			if (!m) throw new Error(`Unexpected label format for quality option: ${el.text}`);
+			el.size = parseInt(m[1]);
 		});
+
+		selection = data.sort((a, b) => b.size - a.size)[0];
+
+		encrypted = selection.value; // sort highest res first
+
+		res = await this.Runtime.evaluate({expression: `$kissenc.decrypt('${encrypted}')`});
+
+		console.log(`Found ${selection.text} media at url "${res.result.value}"`);
+
+		return res.result.value;
 	}
 
 	async fetchMedia(media_url, page_url) {
@@ -224,7 +182,7 @@ class KissAsianRipper {
 			const self = this;
 			const MAX_TIME_NO_DATA = 5 * 60 * 1000;
 			let tries_left = TRIES_PER_STEP;
-			let write_stream, abort_timeout, req;
+			let write_stream, abort_timeout, req, start_ms;
 
 			tryNow();
 
@@ -239,17 +197,16 @@ class KissAsianRipper {
 				console.log(`fetchMedia( ${media_url}, ${page_url} )`);
 
 				let
-					extension   = media_url.split('.').pop(),
 					episode_num = page_url.match(KAR_URL_RE)[4],
-					start_ms    = Date.now(),
 					target_filename;
 
 				episode_num     = episode_num.split('-').map(num => (num.length < 2 ? `0${num}` : num)).join('-');
-				target_filename = `${SAVE_DIR}${self.show_name}/${self.show_name}_S01E${episode_num}.${extension}`;
+				target_filename = `${SAVE_DIR}${self.show_name}/${self.show_name}_S01E${episode_num}.mp4`;
 				write_stream    = fs.createWriteStream(target_filename);
 
 				console.log(`Fetching ${media_url} into ${target_filename}`);
 
+				start_ms = Date.now();
 				req = request
 					.get(media_url)
 					.on('error', onError)
