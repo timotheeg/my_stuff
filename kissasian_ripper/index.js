@@ -183,7 +183,7 @@ class KissAsianRipper {
 						return tryNow(new Error('Unable to find multiple player sizes', 3));
 					}
 
-					let large_media_player_url = m.pop().split('"')[1];
+					let large_media_player_url = m.pop().split('"')[1]; // assumes largest res is last, sould sort to be sure
 
 					resolve(large_media_player_url);
 				});
