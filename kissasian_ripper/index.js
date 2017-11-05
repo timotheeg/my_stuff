@@ -224,7 +224,7 @@ class KissAsianRipper {
 			const self = this;
 			const MAX_TIME_NO_DATA = 5 * 60 * 1000;
 			let tries_left = TRIES_PER_STEP;
-			let write_stream, abort_timeout, req;
+			let write_stream, abort_timeout, req, start_ms;
 
 			tryNow();
 
@@ -241,9 +241,9 @@ class KissAsianRipper {
 				let
 					extension   = media_url.split('.').pop(),
 					episode_num = page_url.match(KAR_URL_RE)[4],
-					start_ms    = Date.now(),
 					target_filename;
 
+				start_ms        = Date.now()
 				episode_num     = episode_num.split('-').map(num => (num.length < 2 ? `0${num}` : num)).join('-');
 				target_filename = `${SAVE_DIR}${self.show_name}/${self.show_name}_S01E${episode_num}.${extension}`;
 				write_stream    = fs.createWriteStream(target_filename);
