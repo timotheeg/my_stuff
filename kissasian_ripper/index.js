@@ -224,7 +224,7 @@ class KissAsianRipper {
 			const self = this;
 			const MAX_TIME_NO_DATA = 5 * 60 * 1000;
 			let tries_left = TRIES_PER_STEP;
-			let write_stream, abort_timeout, req, start_ms;
+			let write_stream, abort_timeout, req, start_ms, target_filename;
 
 			tryNow();
 
@@ -240,8 +240,7 @@ class KissAsianRipper {
 
 				let
 					extension   = media_url.split('.').pop(),
-					episode_num = page_url.match(KAR_URL_RE)[4],
-					target_filename;
+					episode_num = page_url.match(KAR_URL_RE)[4];
 
 				start_ms        = Date.now()
 				episode_num     = episode_num.split('-').map(num => (num.length < 2 ? `0${num}` : num)).join('-');
@@ -254,8 +253,9 @@ class KissAsianRipper {
 					.get(media_url)
 					.on('error', onError)
 					.on('data', onData)
-					.on('end', onEnd)
-					.pipe(write_stream);
+					.on('end', onEnd);
+
+				req.pipe(write_stream);
 
 				// fake onData to start the data timeout timer
 				onData();
@@ -274,8 +274,8 @@ class KissAsianRipper {
 			}
 
 			function onEnd(e) {
-				if (e) return;
 				abort_timeout = clearTimeout(abort_timeout);
+				if (e) return;
 				console.log(`Download complete: ${JSON.stringify(parseMs(Date.now() - start_ms))}`);
 				resolve();
 			}
