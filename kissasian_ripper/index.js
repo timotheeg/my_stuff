@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const parseMs = require('parse-ms');
 
-const SAVE_DIR = '/Users/tgroleau/tmp/kissasian/';
+const SAVE_DIR = '/Users/timothee/tmp/kissasian/';
 const CHECKPOINT = '.checkpoint';
 const SLEEP_TIME = 20 * 1000; // 20s in between each page navigation
 const KAR_URL_RE = /^(.+\/([^/]+)\/)(Episode-([0-9-]+)[^\/]+)$/;
