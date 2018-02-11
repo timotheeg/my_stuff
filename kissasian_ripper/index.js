@@ -178,14 +178,25 @@ class KissAsianRipper {
 				request(player_url, (err, resp, body) => {
 					if (err) tryNow(err);
 
-					let m = body.match(/<a href="([^"]+q=(\d+p))">/g);
-					if (!m) {
+					let
+						a_tag,
+						a_tag_re = /<a href="([^"]+q=(\d+)p)">/g,
+						urls = [];
+
+					while(a_tag = a_tag_re.exec(body)) {
+						urls.push({
+							url:     a_tag[1],
+							quality: parseInt(a_tag[2], 10),
+						});
+					}
+
+					if (!urls.length) {
 						return tryNow(new Error('Unable to find multiple player sizes', 3));
 					}
 
-					let large_media_player_url = m.pop().split('"')[1]; // assumes largest res is last, sould sort to be sure
+					urls.sort((a, b) => b.quality - a.quality); // sort by number descending to have largest media first
 
-					resolve(large_media_player_url);
+					resolve(urls[0].url);
 				});
 			}
 		});
